@@ -7,6 +7,7 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv('.env')
+DEBUG_MODE = True # BlueSkyの代わりにターミナルに出力するデバッグモード
 
 new_data = []
 
@@ -84,9 +85,11 @@ def check_new_feeds(timestamp, feed):
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
             # 出力
-            # print(entry.title)
-            # print(entry.link)
-            post_bsky(entry, feed.feed.title)
+            if (DEBUG_MODE):
+                print(entry.title)
+                print(entry.link)
+            else:
+                post_bsky(entry, feed.feed.title)
     timestamp['updated'] = feed.updated
     return timestamp
 

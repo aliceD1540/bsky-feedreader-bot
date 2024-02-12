@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 load_dotenv('.env')
 
 IMAGE_MIMETYPE = "image/webp"
-DEBUG_MODE = True # BlueSkyの代わりにターミナルに出力するデバッグモード
+DEBUG_MODE = False # BlueSkyの代わりにターミナルに出力するデバッグモード
 
 new_data = []
 

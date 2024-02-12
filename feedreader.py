@@ -5,8 +5,11 @@ from datetime import datetime
 import pytz
 import requests
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 
 load_dotenv('.env')
+
+IMAGE_MIMETYPE = "image/webp"
 DEBUG_MODE = True # BlueSkyの代わりにターミナルに出力するデバッグモード
 
 new_data = []
@@ -34,9 +37,69 @@ def load_config():
         global config
         config = json.load(config_file)
 
+def get_thumb(url) -> dict:
+    '''サムネ取得'''
+    resp = requests.get(url)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    card = {
+        "uri": url,
+        "title": "",
+        "description": "",
+    }
+
+    title_tag = soup.find("meta", property="og:title")
+    if title_tag:
+        card["title"] = title_tag["content"]
+    description_tag = soup.find("meta", property="og:description")
+    if description_tag:
+        card["description"] = description_tag["content"]
+
+    # if there is an "og:image" HTML meta tag, fetch and upload that image
+    image_tag = soup.find("meta", property="og:image")
+    if image_tag:
+        img_url = image_tag["content"]
+        if img_url == '':
+            # og:imageが空欄の場合がある
+            return
+        # naively turn a "relative" URL (just a path) into a full URL, if needed
+        if "://" not in img_url:
+            img_url = url + img_url
+        resp = requests.get(img_url)
+        resp.raise_for_status()
+
+        blob_resp = requests.post(
+            "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+            headers={
+                "Content-Type": IMAGE_MIMETYPE,
+                "Authorization": "Bearer " + accessJwt,
+            },
+            data=resp.content,
+        )
+        blob_resp.raise_for_status()
+        card["thumb"] = blob_resp.json()["blob"]
+    
+    return card
+
 def post_bsky(entry, feed_name):
+    '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     now = datetime.utcnow().isoformat() + 'Z'
+    card = get_thumb(entry.link)
+    if (card['thumb']):
+        external = {
+            'uri': entry.link,
+            'title': card['title'],
+            'description': '',
+            'thumb': card['thumb']
+        }
+    else:
+        external = {
+            'uri': entry.link,
+            'title': card['title'],
+            'description': ''
+        }
     data = {
         'repo': did,
         'collection': 'app.bsky.feed.post',
@@ -46,11 +109,7 @@ def post_bsky(entry, feed_name):
             'type': 'app.bsky.feed.post',
             'embed': {
                 '$type': 'app.bsky.embed.external',
-                'external': {
-                    'uri': entry.link,
-                    'title': entry.title,
-                    'description': ''
-                }
+                'external': external
             }
         }
     }
@@ -60,7 +119,6 @@ def post_bsky(entry, feed_name):
     }
 
     response = requests.post(url, data=json.dumps(data), headers=headers)
-
 
 def try_parse_date(date_string):
     '''複数の書式で日付文字列のパースを試みる'''

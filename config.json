@@ -23,6 +23,9 @@
         },
         {
             "url" : "https://www.meti.go.jp/ml_index_release_atom.xml"
+        },
+        {
+            "url" : "https://northwood.blog.fc2.com/?xml"
         }
     ]
 }

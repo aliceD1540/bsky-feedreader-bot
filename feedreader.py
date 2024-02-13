@@ -6,11 +6,14 @@ import pytz
 import requests
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+import fcntl
 
 load_dotenv('.env')
 
 IMAGE_MIMETYPE = "image/webp"
-DEBUG_MODE = True # BlueSkyの代わりにターミナルに出力するデバッグモード
+
+# BlueSkyの代わりにターミナルに出力するデバッグモード
+DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 
 new_data = []
 
@@ -90,14 +93,14 @@ def post_bsky(entry, feed_name):
     if (card['thumb']):
         external = {
             'uri': entry.link,
-            'title': card['title'],
+            'title': entry.title,
             'description': '',
             'thumb': card['thumb']
         }
     else:
         external = {
             'uri': entry.link,
-            'title': card['title'],
+            'title': entry.title,
             'description': ''
         }
     data = {
@@ -176,8 +179,15 @@ def main():
         json.dump(new_data, last_data)
 
 if __name__ == "__main__":
-    load_config()
-    main()
-
-
-
+    # 前回のプロセスが残っている場合は処理を実行せず終了
+    with open('.lock', 'w') as f:
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError:
+            # 前回のプロセスが残っているため何もせず終了
+            exit(0)
+        try:
+            load_config()
+            main()
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)

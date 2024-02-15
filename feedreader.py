@@ -12,8 +12,10 @@ load_dotenv('.env')
 
 IMAGE_MIMETYPE = "image/webp"
 
-# BlueSkyの代わりにターミナルに出力するデバッグモード
+# デバッグモード
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
+# サムネ有効設定（現時点では不具合が発生するため原則False）
+THUMB_ENABLE = os.getenv('THUMB_ENABLE', False)
 
 new_data = []
 
@@ -89,8 +91,10 @@ def post_bsky(entry, feed_name):
     '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     now = datetime.utcnow().isoformat() + 'Z'
-    card = get_thumb(entry.link)
-    if (card['thumb']):
+    card = {}
+    if (THUMB_ENABLE):
+        card = get_thumb(entry.link)
+    if (card and card['thumb']):
         external = {
             'uri': entry.link,
             'title': entry.title,

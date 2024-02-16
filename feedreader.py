@@ -15,7 +15,7 @@ IMAGE_MIMETYPE = "image/webp"
 # デバッグモード
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 # サムネ有効設定（現時点では不具合が発生するため原則False）
-THUMB_ENABLE = os.getenv('THUMB_ENABLE', False)
+THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
 
 new_data = []
 
@@ -92,7 +92,7 @@ def post_bsky(entry, feed_name):
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     now = datetime.utcnow().isoformat() + 'Z'
     card = {}
-    if (THUMB_ENABLE):
+    if (THUMB_ENABLED):
         card = get_thumb(entry.link)
     if (card and card['thumb']):
         external = {

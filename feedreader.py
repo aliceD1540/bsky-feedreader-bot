@@ -148,9 +148,6 @@ def check_new_feeds(timestamp, feed):
     
     # 更新日時が違うなら前回のタイムスタンプより未来の記事を抽出
     for entry in feed.entries:
-        if (hasattr(entry, 'nhknews_new') and entry.nhknews_new == 'false'):
-            # NHKはnhknews_new=falseで既存記事が含まれることがある
-            continue
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
             # 出力
             if (DEBUG_MODE):

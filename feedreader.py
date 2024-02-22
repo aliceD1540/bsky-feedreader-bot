@@ -86,7 +86,11 @@ def get_thumb(url) -> dict:
             data=resp.content,
         )
         blob_resp.raise_for_status()
-        card["thumb"] = blob_resp.json()["blob"]
+        try:
+            card["thumb"] = blob_resp.json()["blob"]
+        except:
+            # サムネ取得に失敗する場合があるので例外処理
+            pass
     
     return card
 
@@ -96,7 +100,7 @@ def post_bsky(entry, feed_name):
     card = {}
     if (THUMB_ENABLED):
         card = get_thumb(entry.link)
-    if (card and card['thumb']):
+    if (card and 'thumb' in card):
         external = {
             'uri': entry.link,
             'title': entry.title,
@@ -114,7 +118,7 @@ def post_bsky(entry, feed_name):
         'collection': 'app.bsky.feed.post',
         'record': {
             'text': feed_name,
-            'createdAt': nowUtc,
+            'createdAt': datetime.utcnow().isoformat() + 'Z',
             'type': 'app.bsky.feed.post',
             'embed': {
                 '$type': 'app.bsky.embed.external',

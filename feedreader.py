@@ -27,6 +27,9 @@ FEED_DATE_FORMATS = [
     "%Y-%m-%dT%H:%M:%S%z"
 ]
 JST = pytz.timezone('Asia/Tokyo')
+nowDt = datetime.now(JST)
+now = nowDt.strftime(DATE_FORMAT)
+nowUtc = nowDt.isoformat() + 'Z'
 
 # BlueSky セッションの作成
 url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
@@ -90,7 +93,6 @@ def get_thumb(url) -> dict:
 def post_bsky(entry, feed_name):
     '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
-    now = datetime.utcnow().isoformat() + 'Z'
     card = {}
     if (THUMB_ENABLED):
         card = get_thumb(entry.link)
@@ -112,7 +114,7 @@ def post_bsky(entry, feed_name):
         'collection': 'app.bsky.feed.post',
         'record': {
             'text': feed_name,
-            'createdAt': now,
+            'createdAt': nowUtc,
             'type': 'app.bsky.feed.post',
             'embed': {
                 '$type': 'app.bsky.embed.external',
@@ -137,7 +139,7 @@ def try_parse_date(date_string):
             continue
     # 想定外の書式だった場合、エラーを出しつつ暫定的に現在時刻を返す
     print('failed to parse : ' + date_string)
-    return datetime.now(JST).strftime(DATE_FORMAT)
+    return now
 
 def check_new_feeds(timestamp, feed):
     '''新着判定'''
@@ -167,7 +169,7 @@ def main():
             if len(tmp) == 0:
                 timestamp = {
                     'href' : check_feeds['url'],
-                    'updated' : datetime.now(JST).strftime(DATE_FORMAT)
+                    'updated' : now
                 }
             else:
                 timestamp = tmp[0]

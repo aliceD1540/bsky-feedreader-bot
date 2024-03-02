@@ -19,7 +19,7 @@ DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
 
 # DBファイル名
-db = 'TEST.db'
+DB_FILE = 'post_log.sqlite'
 
 new_data = []
 
@@ -47,6 +47,26 @@ def create_bsky_session():
         'did': response['did']
     }
 
+def create_db_connection():
+    '''DB セッションの作成'''
+    # セッションの作成前にDBファイルの存在チェック
+    initFlg = True
+    if os.path.isfile(DB_FILE):
+        initFlg = False
+    global conn
+    conn = sqlite3.connect(DB_FILE)
+    if initFlg:
+        # DBファイルが今回始めて作られた場合は中身を初期化
+        create_table()
+
+def create_table():
+    '''初期テーブル作成'''
+    cur = conn.cursor()
+    # cur.execute('CREATE TABLE post_log(id INTEGER PRIMARY KEY AUTOINCREMENT, title STRING, link STRING, created_at TIMESTAMP)')
+    cur.execute('CREATE TABLE post_log(id INTEGER PRIMARY KEY AUTOINCREMENT, link STRING, created_at TIMESTAMP)')
+    conn.commit()
+
+
 def load_config():
     '''config.json読み込み'''
     with open("config.json", "r") as config_file:
@@ -55,7 +75,6 @@ def load_config():
 
 def get_thumb(url) -> dict:
     '''サムネ取得'''
-    global session
     resp = requests.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -104,7 +123,6 @@ def get_thumb(url) -> dict:
     return card
 
 def post_bsky(entry, feed_name):
-    global session
     '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     card = {}
@@ -163,15 +181,22 @@ def check_new_feeds(timestamp, feed):
         return timestamp
     
     # 更新日時が違うなら前回のタイムスタンプより未来の記事を抽出
+    cur = conn.cursor()
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
-            # 出力
-            if (DEBUG_MODE):
-                print(entry.title)
-                print(entry.link)
-            else:
-                post_bsky(entry, feed.feed.title)
+            # 投稿前に投稿済み記事かチェック
+            posted = cur.execute('SELECT count(*) FROM post_log WHERE link = \'' + entry.link + '\'')
+            if posted.fetchone() == 0:
+                # 出力
+                if (DEBUG_MODE):
+                    print(entry.title)
+                    print(entry.link)
+                else:
+                    post_bsky(entry, feed.feed.title)
+            cur.execute('INSERT INTO post_log(link, created_at) values(\''+ entry.link +'\',\''+ now +'\')')
     timestamp['updated'] = feed.updated
+    conn.commit()
+    cur.close()
     return timestamp
 
 def main():
@@ -208,7 +233,9 @@ if __name__ == "__main__":
             exit(0)
         try:
             create_bsky_session()
+            create_db_connection()
             load_config()
             main()
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            conn.close()

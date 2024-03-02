@@ -7,6 +7,7 @@ import requests
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import fcntl
+import sqlite3
 
 load_dotenv('.env')
 
@@ -16,6 +17,9 @@ IMAGE_MIMETYPE = "image/webp"
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 # サムネ有効設定（現時点では不具合が発生するため原則False）
 THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
+
+# DBファイル名
+db = 'TEST.db'
 
 new_data = []
 
@@ -31,13 +35,17 @@ nowDt = datetime.now(JST)
 now = nowDt.strftime(DATE_FORMAT)
 nowUtc = nowDt.isoformat() + 'Z'
 
-# BlueSky セッションの作成
-url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
-data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
-headers = {'content-type': 'application/json'}
-response = requests.post(url, data=json.dumps(data), headers=headers).json()
-accessJwt = response['accessJwt']
-did = response['did']
+def create_bsky_session():
+    '''BlueSky セッションの作成'''
+    url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
+    data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
+    headers = {'content-type': 'application/json'}
+    response = requests.post(url, data=json.dumps(data), headers=headers).json()
+    global session
+    session = {
+        'accessJwt': response['accessJwt'],
+        'did': response['did']
+    }
 
 def load_config():
     '''config.json読み込み'''
@@ -47,6 +55,7 @@ def load_config():
 
 def get_thumb(url) -> dict:
     '''サムネ取得'''
+    global session
     resp = requests.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -81,7 +90,7 @@ def get_thumb(url) -> dict:
             "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
             headers={
                 "Content-Type": IMAGE_MIMETYPE,
-                "Authorization": "Bearer " + accessJwt,
+                "Authorization": "Bearer " + session['accessJwt'],
             },
             data=resp.content,
         )
@@ -95,6 +104,7 @@ def get_thumb(url) -> dict:
     return card
 
 def post_bsky(entry, feed_name):
+    global session
     '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     card = {}
@@ -114,7 +124,7 @@ def post_bsky(entry, feed_name):
             'description': ''
         }
     data = {
-        'repo': did,
+        'repo': session['did'],
         'collection': 'app.bsky.feed.post',
         'record': {
             'text': feed_name,
@@ -127,7 +137,7 @@ def post_bsky(entry, feed_name):
         }
     }
     headers = {
-        'Authorization': 'Bearer ' + accessJwt,
+        'Authorization': 'Bearer ' + session['accessJwt'],
         'content-type': 'application/json'
     }
 
@@ -197,6 +207,7 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
+            create_bsky_session()
             load_config()
             main()
         finally:

@@ -7,6 +7,8 @@ import requests
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import fcntl
+import sqlite3
+import sys
 
 load_dotenv('.env')
 
@@ -16,6 +18,9 @@ IMAGE_MIMETYPE = "image/webp"
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 # サムネ有効設定（現時点では不具合が発生するため原則False）
 THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
+
+# DBファイル名
+DB_FILE = 'post_log.sqlite'
 
 new_data = []
 
@@ -31,13 +36,44 @@ nowDt = datetime.now(JST)
 now = nowDt.strftime(DATE_FORMAT)
 nowUtc = nowDt.isoformat() + 'Z'
 
-# BlueSky セッションの作成
-url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
-data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
-headers = {'content-type': 'application/json'}
-response = requests.post(url, data=json.dumps(data), headers=headers).json()
-accessJwt = response['accessJwt']
-did = response['did']
+AS_OLD_DATE = os.getenv('AS_OLD_DATE', 30)
+
+def create_bsky_session():
+    '''BlueSky セッションの作成'''
+    url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
+    data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
+    headers = {'content-type': 'application/json'}
+    response = requests.post(url, data=json.dumps(data), headers=headers).json()
+    global session
+    session = {
+        'accessJwt': response['accessJwt'],
+        'did': response['did']
+    }
+
+def create_db_connection():
+    '''DB セッションの作成'''
+    # セッションの作成前にDBファイルの存在チェック
+    initFlg = True
+    if os.path.isfile(DB_FILE):
+        initFlg = False
+    global conn
+    conn = sqlite3.connect(DB_FILE)
+    if initFlg:
+        # DBファイルが今回始めて作られた場合は中身を初期化
+        create_table()
+
+def create_table():
+    '''初期テーブル作成'''
+    cur = conn.cursor()
+    cur.execute('CREATE TABLE post_log(id INTEGER PRIMARY KEY AUTOINCREMENT, link STRING, created_at TIMESTAMP)')
+    conn.commit()
+
+def delete_old_data():
+    '''古いレコードを削除してvacuumを叩く'''
+    cur = conn.cursor()
+    cur.execute('DELETE FROM post_log WHERE created_at < datetime(\'now\', \'-' + AS_OLD_DATE + ' days\')')
+    conn.commit()
+    cur.execute('VACUUM')
 
 def load_config():
     '''config.json読み込み'''
@@ -81,7 +117,7 @@ def get_thumb(url) -> dict:
             "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
             headers={
                 "Content-Type": IMAGE_MIMETYPE,
-                "Authorization": "Bearer " + accessJwt,
+                "Authorization": "Bearer " + session['accessJwt'],
             },
             data=resp.content,
         )
@@ -114,7 +150,7 @@ def post_bsky(entry, feed_name):
             'description': ''
         }
     data = {
-        'repo': did,
+        'repo': session['did'],
         'collection': 'app.bsky.feed.post',
         'record': {
             'text': feed_name,
@@ -127,7 +163,7 @@ def post_bsky(entry, feed_name):
         }
     }
     headers = {
-        'Authorization': 'Bearer ' + accessJwt,
+        'Authorization': 'Bearer ' + session['accessJwt'],
         'content-type': 'application/json'
     }
 
@@ -153,15 +189,22 @@ def check_new_feeds(timestamp, feed):
         return timestamp
     
     # 更新日時が違うなら前回のタイムスタンプより未来の記事を抽出
+    cur = conn.cursor()
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
-            # 出力
-            if (DEBUG_MODE):
-                print(entry.title)
-                print(entry.link)
-            else:
-                post_bsky(entry, feed.feed.title)
+            # 投稿前に投稿済み記事かチェック
+            posted = cur.execute('SELECT count(id) FROM post_log WHERE link = \'' + entry.link + '\'')
+            if posted.fetchone()[0] == 0:
+                # 出力
+                if (DEBUG_MODE):
+                    print(entry.title)
+                    print(entry.link)
+                else:
+                    post_bsky(entry, feed.feed.title)
+            cur.execute('INSERT INTO post_log(link, created_at) values(\''+ entry.link +'\',\''+ now +'\')')
     timestamp['updated'] = feed.updated
+    conn.commit()
+    cur.close()
     return timestamp
 
 def main():
@@ -197,7 +240,12 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
+            create_bsky_session()
+            create_db_connection()
             load_config()
             main()
+            if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
+                delete_old_data()
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            conn.close()

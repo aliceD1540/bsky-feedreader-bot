@@ -12,15 +12,28 @@ BlueSky用フィードリーダーです。
 3. config.json にチェックしたいフィードのURLを設定
 4. feedreader.py を実行
 
+### crontab設定例
+
+現在運用している環境のcrontab設定です。
+毎月1日の0時のみオプション付きで起動し、DB上の旧データ削除＆VACUUMを行います。
+
+```
+1-59/5 * * * * /home/pi/ssd/bsky-feedreader-bot/run.sh
+0 1-23 * * * /home/pi/ssd/bsky-feedreader-bot/run.sh
+0 0 2-31 * * /home/pi/ssd/bsky-feedreader-bot/run.sh
+0 0 1 * * /home/pi/ssd/bsky-feedreader-bot/run.sh vacuum
+```
+
 ## 注意
 
 - 当然ながら利用は自己責任です
 - 日付の書式の想定は、私が個人的に利用するフィードを網羅してるだけなので足りない可能性があります
 
-## 実際の運用環境
+## 運用ハードウェア環境
 
-- Raspberry Pi Zero W
-    - 5分ごとに feedreader.py を実行
-    - 1日ごとに githubからpull
-        - チェックするフィードはGitHub上で管理
+sqliteのDB書き換え処理が頻繁に走るため、SDカード内で処理せず外付けストレージ推奨
 
+- テスト環境
+    - Raspberry Pi Zero WH
+- 本番環境
+    - Raspberry Pi Zero 2W

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 import fcntl
 import sqlite3
+import sys
 
 load_dotenv('.env')
 
@@ -34,6 +35,8 @@ JST = pytz.timezone('Asia/Tokyo')
 nowDt = datetime.now(JST)
 now = nowDt.strftime(DATE_FORMAT)
 nowUtc = nowDt.isoformat() + 'Z'
+
+AS_OLD_DATE = os.getenv('AS_OLD_DATE', 30)
 
 def create_bsky_session():
     '''BlueSky セッションの作成'''
@@ -62,10 +65,15 @@ def create_db_connection():
 def create_table():
     '''初期テーブル作成'''
     cur = conn.cursor()
-    # cur.execute('CREATE TABLE post_log(id INTEGER PRIMARY KEY AUTOINCREMENT, title STRING, link STRING, created_at TIMESTAMP)')
     cur.execute('CREATE TABLE post_log(id INTEGER PRIMARY KEY AUTOINCREMENT, link STRING, created_at TIMESTAMP)')
     conn.commit()
 
+def delete_old_data():
+    '''古いレコードを削除してvacuumを叩く'''
+    cur = conn.cursor()
+    cur.execute('DELETE FROM post_log WHERE created_at < datetime(\'now\', \'-' + AS_OLD_DATE + ' days\')')
+    conn.commit()
+    cur.execute('VACUUM')
 
 def load_config():
     '''config.json読み込み'''
@@ -185,8 +193,8 @@ def check_new_feeds(timestamp, feed):
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
             # 投稿前に投稿済み記事かチェック
-            posted = cur.execute('SELECT count(*) FROM post_log WHERE link = \'' + entry.link + '\'')
-            if posted.fetchone() == 0:
+            posted = cur.execute('SELECT count(id) FROM post_log WHERE link = \'' + entry.link + '\'')
+            if posted.fetchone()[0] == 0:
                 # 出力
                 if (DEBUG_MODE):
                     print(entry.title)
@@ -236,6 +244,8 @@ if __name__ == "__main__":
             create_db_connection()
             load_config()
             main()
+            if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
+                delete_old_data()
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             conn.close()

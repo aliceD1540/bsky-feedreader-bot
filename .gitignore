@@ -1,1 +1,4 @@
 .env
+config.json
+post_log.sqlite
+.lock

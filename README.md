@@ -8,8 +8,10 @@ BlueSky用フィードリーダーです。
 
 1. BlueSkyでアプリパスワードを発行 
 2. .env.sample をコピーして .env ファイルを作成 
-    - 中身をアカウント名と1で発行したパスワードに変更
-3. config.json にチェックしたいフィードのURLを設定
+    - アカウント名と1で発行したパスワードに変更
+    - 必要に応じて各オプションを書き換え
+3. config.json.sample をコピーして config.json ファイルを作成
+    - チェックしたいフィードのURLを設定
 4. feedreader.py を実行
 
 ### crontab設定例
@@ -31,7 +33,7 @@ BlueSky用フィードリーダーです。
 
 ## 運用ハードウェア環境
 
-sqliteのDB書き換え処理が頻繁に走るため、SDカード内で処理せず外付けストレージ推奨
+sqliteのDB書き換え処理が頻繁に走るため、Raspberry Piなどで動かす場合はSDカード内で処理せず外付けストレージ推奨
 
 - テスト環境
     - Raspberry Pi Zero WH

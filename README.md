@@ -33,9 +33,12 @@ BlueSky用フィードリーダーです。
 
 ## 運用ハードウェア環境
 
-sqliteのDB書き換え処理が頻繁に走るため、Raspberry Piなどで動かす場合はSDカード内で処理せず外付けストレージ推奨
+sqliteのDB書き換え処理が頻繁に走るため、\
+Raspberry Piなどで動かす場合はSDカード内で処理せず外付けストレージ推奨
 
 - テスト環境
     - Raspberry Pi Zero WH
+        - SDカードで耐久テスト中
 - 本番環境
     - Raspberry Pi Zero 2W
+        - SSDで実運用中

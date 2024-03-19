@@ -57,7 +57,7 @@ def create_db_connection():
     if os.path.isfile(DB_FILE):
         initFlg = False
     global conn
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, isolation_level='IMMEDIATE')
     if initFlg:
         # DBファイルが今回始めて作られた場合は中身を初期化
         create_table()

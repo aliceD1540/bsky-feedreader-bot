@@ -201,7 +201,7 @@ def check_new_feeds(timestamp, feed):
                     print(entry.link)
                 else:
                     post_bsky(entry, feed.feed.title)
-            cur.execute('INSERT INTO post_log(link, created_at) values(\''+ entry.link +'\',\''+ now +'\')')
+                    cur.execute('INSERT INTO post_log(link, created_at) values(\''+ entry.link +'\',\''+ now +'\')')
     timestamp['updated'] = feed.updated
     conn.commit()
     cur.close()

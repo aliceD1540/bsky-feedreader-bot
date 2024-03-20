@@ -218,8 +218,7 @@ def check_new_feeds(timestamp, feed):
             # 投稿前に投稿済み記事かチェック
             posted = cur.execute('SELECT count(id) FROM post_log WHERE link = :link', {'link': entry.link})
             if posted.fetchone()[0] == 0:
-                insert = cur.execute('INSERT INTO post_log(link, created_at) values(:link, :now) RETURNING id', {'link': entry.link, 'now': now})
-                # print(insert.fetchone()[0])
+                cur.execute('INSERT INTO post_log(link, created_at) values(:link, :now)', {'link': entry.link, 'now': now})
                 # 出力
                 if (DEBUG_MODE):
                     print(entry.title)

@@ -10,6 +10,7 @@ import fcntl
 import sqlite3
 import sys
 import pathlib
+import traceback
 
 load_dotenv('.env')
 
@@ -58,7 +59,7 @@ def create_db_connection():
     if os.path.isfile(DB_FILE):
         initFlg = False
     global conn
-    conn = sqlite3.connect(DB_FILE, isolation_level='IMMEDIATE')
+    conn = sqlite3.connect(DB_FILE)
     if initFlg:
         # DBファイルが今回始めて作られた場合は中身を初期化
         create_table()
@@ -170,7 +171,7 @@ def post_bsky(entry, feed_name):
 
     response = requests.post(url, data=json.dumps(data), headers=headers)
 
-def post_bsky(text):
+def post_bsky_text(text):
     '''BlueSkyに投稿（テキスト指定）'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
 
@@ -211,6 +212,7 @@ def check_new_feeds(timestamp, feed):
     
     # 更新日時が違うなら前回のタイムスタンプより未来の記事を抽出
     cur = conn.cursor()
+    cur.execute('BEGIN TRANSACTION')
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
             # 投稿前に投稿済み記事かチェック
@@ -225,8 +227,8 @@ def check_new_feeds(timestamp, feed):
                 else:
                     post_bsky(entry, feed.feed.title)
     timestamp['updated'] = feed.updated
-    conn.commit()
     cur.close()
+    conn.commit()
     return timestamp
 
 def main():
@@ -275,8 +277,9 @@ if __name__ == "__main__":
         except:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
             stop_file.touch()
-            post_bsky('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
-            pass
+            with open(stop_file.name, 'a') as f:
+                traceback.print_exc(file=f)
+            post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             conn.close()

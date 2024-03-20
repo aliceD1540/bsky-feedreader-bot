@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 import fcntl
 import sqlite3
 import sys
+import pathlib
 
 load_dotenv('.env')
 
@@ -107,26 +108,26 @@ def get_thumb(url) -> dict:
         if img_url == '':
             # og:imageが空欄の場合がある
             return
-        # naively turn a "relative" URL (just a path) into a full URL, if needed
-        if "://" not in img_url:
-            img_url = url + img_url
-        resp = requests.get(img_url)
-        resp.raise_for_status()
-
-        blob_resp = requests.post(
-            "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
-            headers={
-                "Content-Type": IMAGE_MIMETYPE,
-                "Authorization": "Bearer " + session['accessJwt'],
-            },
-            data=resp.content,
-        )
-        blob_resp.raise_for_status()
         try:
+            # naively turn a "relative" URL (just a path) into a full URL, if needed
+            if "://" not in img_url:
+                img_url = url + img_url
+            resp = requests.get(img_url)
+            resp.raise_for_status()
+
+            blob_resp = requests.post(
+                "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+                headers={
+                    "Content-Type": IMAGE_MIMETYPE,
+                    "Authorization": "Bearer " + session['accessJwt'],
+                },
+                data=resp.content,
+            )
+            blob_resp.raise_for_status()
             card["thumb"] = blob_resp.json()["blob"]
         except:
-            # サムネ取得に失敗する場合があるので例外処理
-            pass
+            # サムネ取得や設定に失敗した場合はサムネ無し扱い
+            return
     
     return card
 
@@ -169,6 +170,26 @@ def post_bsky(entry, feed_name):
 
     response = requests.post(url, data=json.dumps(data), headers=headers)
 
+def post_bsky(text):
+    '''BlueSkyに投稿（テキスト指定）'''
+    url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
+
+    data = {
+        'repo': session['did'],
+        'collection': 'app.bsky.feed.post',
+        'record': {
+            'text': text,
+            'createdAt': datetime.utcnow().isoformat() + 'Z',
+            'type': 'app.bsky.feed.post',
+        }
+    }
+    headers = {
+        'Authorization': 'Bearer ' + session['accessJwt'],
+        'content-type': 'application/json'
+    }
+
+    response = requests.post(url, data=json.dumps(data), headers=headers)
+
 def try_parse_date(date_string):
     '''複数の書式で日付文字列のパースを試みる'''
     for format in FEED_DATE_FORMATS:
@@ -193,15 +214,16 @@ def check_new_feeds(timestamp, feed):
     for entry in feed.entries:
         if (try_parse_date(entry.updated)) > JST.fromutc(datetime.strptime(timestamp['updated'], DATE_FORMAT)):
             # 投稿前に投稿済み記事かチェック
-            posted = cur.execute('SELECT count(id) FROM post_log WHERE link = \'' + entry.link + '\'')
+            posted = cur.execute('SELECT count(id) FROM post_log WHERE link = :link', {'link': entry.link})
             if posted.fetchone()[0] == 0:
+                insert = cur.execute('INSERT INTO post_log(link, created_at) values(:link, :now) RETURNING id', {'link': entry.link, 'now': now})
+                # print(insert.fetchone()[0])
                 # 出力
                 if (DEBUG_MODE):
                     print(entry.title)
                     print(entry.link)
                 else:
                     post_bsky(entry, feed.feed.title)
-                cur.execute('INSERT INTO post_log(link, created_at) values(\''+ entry.link +'\',\''+ now +'\')')
     timestamp['updated'] = feed.updated
     conn.commit()
     cur.close()
@@ -232,6 +254,10 @@ def main():
         json.dump(new_data, last_data)
 
 if __name__ == "__main__":
+    # stopファイルが残っていたら何も実行しない
+    stop_file = pathlib.Path('./stop')
+    if (stop_file.exists()):
+        exit(0)
     # 前回のプロセスが残っている場合は処理を実行せず終了
     with open('.lock', 'w') as f:
         try:
@@ -246,6 +272,11 @@ if __name__ == "__main__":
             main()
             if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
                 delete_old_data()
+        except:
+            # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
+            stop_file.touch()
+            post_bsky('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
+            pass
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             conn.close()

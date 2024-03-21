@@ -42,15 +42,20 @@ AS_OLD_DATE = os.getenv('AS_OLD_DATE', 30)
 
 def create_bsky_session():
     '''BlueSky セッションの作成'''
-    url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
-    data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
-    headers = {'content-type': 'application/json'}
-    response = requests.post(url, data=json.dumps(data), headers=headers).json()
-    global session
-    session = {
-        'accessJwt': response['accessJwt'],
-        'did': response['did']
-    }
+    try:
+        url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
+        data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
+        headers = {'content-type': 'application/json'}
+        response = requests.post(url, data=json.dumps(data), headers=headers).json()
+        global session
+        session = {
+            'accessJwt': response['accessJwt'],
+            'did': response['did']
+        }
+        return session
+    except:
+        # 通信不良等でセッションの作成に失敗した場合は処理終了
+        return
 
 def create_db_connection():
     '''DB セッションの作成'''
@@ -267,12 +272,15 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
-            create_bsky_session()
-            create_db_connection()
-            load_config()
-            main()
-            if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
-                delete_old_data()
+            session = create_bsky_session()
+            if session:
+                create_db_connection()
+                load_config()
+                main()
+                if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
+                    delete_old_data()
+            else:
+                print('failed to create session.')
         except:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
             stop_file.touch()

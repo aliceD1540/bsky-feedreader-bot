@@ -174,7 +174,11 @@ def post_bsky(entry, feed_name):
         'content-type': 'application/json'
     }
 
-    response = requests.post(url, data=json.dumps(data), headers=headers)
+    try:
+        response = requests.post(url, data=json.dumps(data), headers=headers)
+        return True
+    except:
+        return False
 
 def post_bsky_text(text):
     '''BlueSkyに投稿（テキスト指定）'''
@@ -229,11 +233,22 @@ def check_new_feeds(timestamp, feed):
                     print(entry.title)
                     print(entry.link)
                 else:
-                    post_bsky(entry, feed.feed.title)
+                    if not post_bsky(entry, feed.feed.title):
+                        # 投稿に失敗したらループを抜けておく
+                        write_warn('post to bsky failed.')
+                        break
     timestamp['updated'] = feed.updated
     cur.close()
     conn.commit()
     return timestamp
+
+def write_warn(message):
+    '''想定している異常だけど多発した際の記録用に発生時間は残しておきたい'''
+    warn_file = pathlib.Path('./warn.log')
+    warn_file.touch()
+
+    with open("warn.log", mode='a') as warn_txt:
+        warn_txt.write(now + " : " + message + "\n")
 
 def main():
     # 最終読み取り時間を元に更新チェック
@@ -248,12 +263,15 @@ def main():
                 }
             else:
                 timestamp = tmp[0]
-
-            feed = feedparser.parse(check_feeds['url'])
-            # bozo=1だったらパースに失敗（URLが死んでるなど？）
-            timestamp = check_new_feeds(timestamp, feed)
-
-            new_data.append(timestamp)
+            try:
+                feed = feedparser.parse(check_feeds['url'])
+                # bozo=1だったらパースに失敗（URLが死んでるなど？）
+                timestamp = check_new_feeds(timestamp, feed)
+                new_data.append(timestamp)
+            except:
+                # パースに失敗したら次のフィードへ
+                write_warn('feedparser parse failed.')
+                pass
 
     # 最終読み取り時間を更新
     with open("last.json", "w") as last_data:

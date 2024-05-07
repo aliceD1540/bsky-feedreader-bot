@@ -270,7 +270,7 @@ def main():
                 new_data.append(timestamp)
             except:
                 # パースに失敗したら次のフィードへ
-                write_warn('feedparser parse failed.')
+                write_warn('feedparser parse failed. : ' + check_feeds['url'])
                 pass
 
     # 最終読み取り時間を更新

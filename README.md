@@ -20,15 +20,17 @@ Bluesky用フィードリーダーです。
 毎月1日の0時のみオプション付きで起動し、DB上の旧データ削除＆VACUUMを行います。
 
 ```
-1-59/5 * * * * /home/pi/ssd/bsky-feedreader-bot/run.sh
+1-59/10 * * * * /home/pi/ssd/bsky-feedreader-bot/run.sh
 0 1-23 * * * /home/pi/ssd/bsky-feedreader-bot/run.sh
 0 0 2-31 * * /home/pi/ssd/bsky-feedreader-bot/run.sh
 0 0 1 * * /home/pi/ssd/bsky-feedreader-bot/run.sh vacuum
 ```
 
+2024-09-10 Rate Limitに引っかかったので実行間隔を5分→10分に変更
+
 ## 注意
 
-- 当然ながら利用は自己責任です
+- 利用は自己責任です
 - 日付の書式の想定は、私が個人的に利用するフィードを網羅してるだけなので足りない可能性があります
 
 ## 運用ハードウェア環境

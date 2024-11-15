@@ -312,4 +312,7 @@ if __name__ == "__main__":
             post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass

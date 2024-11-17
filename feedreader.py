@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import pathlib
 import traceback
+import time
 
 load_dotenv('.env')
 
@@ -174,11 +175,15 @@ def post_bsky(entry, feed_name):
         'content-type': 'application/json'
     }
 
+    ans = False
     try:
         response = requests.post(url, data=json.dumps(data), headers=headers)
-        return True
-    except:
-        return False
+        ans = True
+    except Exception as e:
+        write_warn(e)
+    finally:
+        time.sleep(5)
+    return ans
 
 def post_bsky_text(text):
     '''BlueSkyに投稿（テキスト指定）'''
@@ -307,4 +312,7 @@ if __name__ == "__main__":
             post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-            conn.close()
+            try:
+                conn.close()
+            except:
+                pass

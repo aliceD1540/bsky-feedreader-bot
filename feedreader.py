@@ -25,6 +25,9 @@ THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
 # DBファイル名
 DB_FILE = 'post_log.sqlite'
 
+# Blueskyセッション保持ファイル
+BSKY_SESSION_FILE = 'bsky_session.json'
+
 new_data = []
 
 # フィード解析用宣言
@@ -41,21 +44,47 @@ nowUtc = nowDt.isoformat() + 'Z'
 
 AS_OLD_DATE = os.getenv('AS_OLD_DATE', 30)
 
+def save_bsky_session(session_data):
+    '''Bluesky セッション情報の保存'''
+    with open(BSKY_SESSION_FILE, 'w') as file:
+        json.dump(session_data, file)
+
+def load_bsky_session():
+    '''Bluesky セッション情報のロード'''
+    try:
+        with open(BSKY_SESSION_FILE, 'r') as file:
+            session_data = json.load(file)
+        global session
+        session = {
+            'accessJwt': session_data['accessJwt'],
+            'did': session_data['did']
+        }
+        return session
+    except FileNotFoundError:
+        # ファイルが存在しなければ初回実行としてセッション作成
+        print('create session')
+        return create_bsky_session()
+
+def refresh_bsky_session():
+    return
+
 def create_bsky_session():
-    '''BlueSky セッションの作成'''
+    '''Bluesky セッションの作成'''
     try:
         url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
         data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
         headers = {'content-type': 'application/json'}
         response = requests.post(url, data=json.dumps(data), headers=headers).json()
+        save_bsky_session(response)
         global session
         session = {
             'accessJwt': response['accessJwt'],
             'did': response['did']
         }
         return session
-    except:
+    except Exception as e:
         # 通信不良等でセッションの作成に失敗した場合は処理終了
+        print(e)
         return
 
 def create_db_connection():
@@ -295,7 +324,7 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
-            session = create_bsky_session()
+            session = load_bsky_session()
             if session:
                 create_db_connection()
                 load_config()
@@ -303,7 +332,7 @@ if __name__ == "__main__":
                 if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
                     delete_old_data()
             else:
-                print('failed to create session.')
+                write_warn('failed to create session.')
         except:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
             stop_file.touch()

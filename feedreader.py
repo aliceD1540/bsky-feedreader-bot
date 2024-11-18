@@ -54,19 +54,56 @@ def load_bsky_session():
     try:
         with open(BSKY_SESSION_FILE, 'r') as file:
             session_data = json.load(file)
-        global session
+        # global session
         session = {
             'accessJwt': session_data['accessJwt'],
+            'refreshJwt': session_data['refreshJwt'],
             'did': session_data['did']
         }
-        return session
+        if get_bsky_session(session):
+            # トークンが有効ならそのまま使用
+            return session
+        else:
+            # トークンが無効ならリフレッシュ
+            return refresh_bsky_session(session)
     except FileNotFoundError:
         # ファイルが存在しなければ初回実行としてセッション作成
         print('create session')
         return create_bsky_session()
 
-def refresh_bsky_session():
-    return
+def get_bsky_session(session):
+    try:
+        url = 'https://bsky.social/xrpc/com.atproto.server.getSession'
+        headers = {
+            'Authorization': 'Bearer ' + session['accessJwt'],
+            'content-type': 'application/json'
+        }
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            return True
+    except Exception as e:
+        write_error(e)
+        return
+    return False
+
+def refresh_bsky_session(session):
+    try:
+        url = 'https://bsky.social/xrpc/com.atproto.server.refreshSession'
+        headers = {
+            'Authorization': 'Bearer ' + session['refreshJwt'],
+            'content-type': 'application/json'
+        }
+        response = requests.post(url, headers=headers).json()
+        save_bsky_session(response)
+        session = {
+            'accessJwt': response['accessJwt'],
+            'refreshJwt': response['refreshJwt'],
+            'did': response['did']
+        }
+    except Exception as e:
+        write_error(e)
+        return
+    return session
 
 def create_bsky_session():
     '''Bluesky セッションの作成'''
@@ -76,7 +113,7 @@ def create_bsky_session():
         headers = {'content-type': 'application/json'}
         response = requests.post(url, data=json.dumps(data), headers=headers).json()
         save_bsky_session(response)
-        global session
+        # global session
         session = {
             'accessJwt': response['accessJwt'],
             'did': response['did']
@@ -84,7 +121,7 @@ def create_bsky_session():
         return session
     except Exception as e:
         # 通信不良等でセッションの作成に失敗した場合は処理終了
-        print(e)
+        write_error(e)
         return
 
 def create_db_connection():
@@ -167,7 +204,7 @@ def get_thumb(url) -> dict:
     
     return card
 
-def post_bsky(entry, feed_name):
+def post_bsky(entry, feed_name, session):
     '''BlueSkyに投稿'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
     card = {}
@@ -209,12 +246,12 @@ def post_bsky(entry, feed_name):
         response = requests.post(url, data=json.dumps(data), headers=headers)
         ans = True
     except Exception as e:
-        write_warn(e)
+        write_error(e)
     finally:
         time.sleep(5)
     return ans
 
-def post_bsky_text(text):
+def post_bsky_text(text, session):
     '''BlueSkyに投稿（テキスト指定）'''
     url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
 
@@ -246,7 +283,7 @@ def try_parse_date(date_string):
     print('failed to parse : ' + date_string)
     return now
 
-def check_new_feeds(timestamp, feed):
+def check_new_feeds(timestamp, feed, session):
     '''新着判定'''
     # 更新なしならそのままtimestampを返して処理終了
     if feed.updated == timestamp['updated']:
@@ -267,7 +304,7 @@ def check_new_feeds(timestamp, feed):
                     print(entry.title)
                     print(entry.link)
                 else:
-                    if not post_bsky(entry, feed.feed.title):
+                    if not post_bsky(entry, feed.feed.title, session):
                         # 投稿に失敗したらループを抜けておく
                         write_warn('post to bsky failed.')
                         break
@@ -284,7 +321,15 @@ def write_warn(message):
     with open("warn.log", mode='a') as warn_txt:
         warn_txt.write(now + " : " + message + "\n")
 
-def main():
+def write_error(message):
+    '''想定外のエラー'''
+    error_file = pathlib.Path('./error.log')
+    error_file.touch()
+
+    with open("error.log", mode='a') as error_txt:
+        error_txt.write(now + " : " + message + "\n")
+
+def main(session):
     # 最終読み取り時間を元に更新チェック
     with open("last.json", "r") as last_data:
         data = json.load(last_data)
@@ -300,7 +345,7 @@ def main():
             try:
                 feed = feedparser.parse(check_feeds['url'])
                 # bozo=1だったらパースに失敗（URLが死んでるなど？）
-                timestamp = check_new_feeds(timestamp, feed)
+                timestamp = check_new_feeds(timestamp, feed, session)
                 new_data.append(timestamp)
             except:
                 # パースに失敗したら次のフィードへ
@@ -328,7 +373,7 @@ if __name__ == "__main__":
             if session:
                 create_db_connection()
                 load_config()
-                main()
+                main(session)
                 if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
                     delete_old_data()
             else:
@@ -338,7 +383,7 @@ if __name__ == "__main__":
             stop_file.touch()
             with open(stop_file.name, 'a') as f:
                 traceback.print_exc(file=f)
-            post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。')
+            post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。', session)
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             try:

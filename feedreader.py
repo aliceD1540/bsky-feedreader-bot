@@ -66,8 +66,8 @@ def load_bsky_session():
         else:
             # トークンが無効ならリフレッシュ
             return refresh_bsky_session(session)
-    except FileNotFoundError:
-        # ファイルが存在しなければ初回実行としてセッション作成
+    except (FileNotFoundError, KeyError):
+        # ファイルが存在しなかったりトークンが取得できない場合はセッション作成
         print('create session')
         return create_bsky_session()
 

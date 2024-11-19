@@ -11,22 +11,19 @@ import sqlite3
 import sys
 import pathlib
 import traceback
-import time
+import logger
+import bsky_util
 
 load_dotenv('.env')
 
-IMAGE_MIMETYPE = "image/webp"
+# サムネ有効設定
+THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
 
 # デバッグモード
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
-# サムネ有効設定（現時点では不具合が発生するため原則False）
-THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
 
 # DBファイル名
 DB_FILE = 'post_log.sqlite'
-
-# Blueskyセッション保持ファイル
-BSKY_SESSION_FILE = 'bsky_session.json'
 
 new_data = []
 
@@ -43,86 +40,6 @@ now = nowDt.strftime(DATE_FORMAT)
 nowUtc = nowDt.isoformat() + 'Z'
 
 AS_OLD_DATE = os.getenv('AS_OLD_DATE', 30)
-
-def save_bsky_session(session_data):
-    '''Bluesky セッション情報の保存'''
-    with open(BSKY_SESSION_FILE, 'w') as file:
-        json.dump(session_data, file)
-
-def load_bsky_session():
-    '''Bluesky セッション情報のロード'''
-    try:
-        with open(BSKY_SESSION_FILE, 'r') as file:
-            session_data = json.load(file)
-        # global session
-        session = {
-            'accessJwt': session_data['accessJwt'],
-            'refreshJwt': session_data['refreshJwt'],
-            'did': session_data['did']
-        }
-        if get_bsky_session(session):
-            # トークンが有効ならそのまま使用
-            return session
-        else:
-            # トークンが無効ならリフレッシュ
-            return refresh_bsky_session(session)
-    except (FileNotFoundError, KeyError):
-        # ファイルが存在しなかったりトークンが取得できない場合はセッション作成
-        print('create session')
-        return create_bsky_session()
-
-def get_bsky_session(session):
-    try:
-        url = 'https://bsky.social/xrpc/com.atproto.server.getSession'
-        headers = {
-            'Authorization': 'Bearer ' + session['accessJwt'],
-            'content-type': 'application/json'
-        }
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            return True
-    except Exception as e:
-        write_error(e)
-        return
-    return False
-
-def refresh_bsky_session(session):
-    try:
-        url = 'https://bsky.social/xrpc/com.atproto.server.refreshSession'
-        headers = {
-            'Authorization': 'Bearer ' + session['refreshJwt'],
-            'content-type': 'application/json'
-        }
-        response = requests.post(url, headers=headers).json()
-        save_bsky_session(response)
-        session = {
-            'accessJwt': response['accessJwt'],
-            'refreshJwt': response['refreshJwt'],
-            'did': response['did']
-        }
-    except Exception as e:
-        write_error(e)
-        return
-    return session
-
-def create_bsky_session():
-    '''Bluesky セッションの作成'''
-    try:
-        url = 'https://bsky.social/xrpc/com.atproto.server.createSession'
-        data = {'identifier': os.getenv('BSKY_USER_NAME'), 'password': os.getenv('BSKY_APP_PASS')}
-        headers = {'content-type': 'application/json'}
-        response = requests.post(url, data=json.dumps(data), headers=headers).json()
-        save_bsky_session(response)
-        # global session
-        session = {
-            'accessJwt': response['accessJwt'],
-            'did': response['did']
-        }
-        return session
-    except Exception as e:
-        # 通信不良等でセッションの作成に失敗した場合は処理終了
-        write_error(e)
-        return
 
 def create_db_connection():
     '''DB セッションの作成'''
@@ -161,115 +78,31 @@ def get_thumb(url) -> dict:
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    card = {
-        "uri": url,
-        "title": "",
-        "description": "",
-    }
-
     title_tag = soup.find("meta", property="og:title")
-    if title_tag:
-        card["title"] = title_tag["content"]
     description_tag = soup.find("meta", property="og:description")
-    if description_tag:
-        card["description"] = description_tag["content"]
-
-    # if there is an "og:image" HTML meta tag, fetch and upload that image
     image_tag = soup.find("meta", property="og:image")
+
     if image_tag:
         img_url = image_tag["content"]
         if img_url == '':
             # og:imageが空欄の場合がある
             return
         try:
-            # naively turn a "relative" URL (just a path) into a full URL, if needed
             if "://" not in img_url:
                 img_url = url + img_url
             resp = requests.get(img_url)
             resp.raise_for_status()
 
-            blob_resp = requests.post(
-                "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
-                headers={
-                    "Content-Type": IMAGE_MIMETYPE,
-                    "Authorization": "Bearer " + session['accessJwt'],
-                },
-                data=resp.content,
+            return bsky_util.create_link_card(
+                resp.content,
+                url,
+                title_tag["content"],
+                description_tag["content"],
+                session
             )
-            blob_resp.raise_for_status()
-            card["thumb"] = blob_resp.json()["blob"]
         except:
             # サムネ取得や設定に失敗した場合はサムネ無し扱い
             return
-    
-    return card
-
-def post_bsky(entry, feed_name, session):
-    '''BlueSkyに投稿'''
-    url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
-    card = {}
-    if (THUMB_ENABLED):
-        card = get_thumb(entry.link)
-    if (card and 'thumb' in card):
-        external = {
-            'uri': entry.link,
-            'title': entry.title,
-            'description': '',
-            'thumb': card['thumb']
-        }
-    else:
-        external = {
-            'uri': entry.link,
-            'title': entry.title,
-            'description': ''
-        }
-    data = {
-        'repo': session['did'],
-        'collection': 'app.bsky.feed.post',
-        'record': {
-            'text': feed_name,
-            'createdAt': datetime.utcnow().isoformat() + 'Z',
-            'type': 'app.bsky.feed.post',
-            'embed': {
-                '$type': 'app.bsky.embed.external',
-                'external': external
-            }
-        }
-    }
-    headers = {
-        'Authorization': 'Bearer ' + session['accessJwt'],
-        'content-type': 'application/json'
-    }
-
-    ans = False
-    try:
-        response = requests.post(url, data=json.dumps(data), headers=headers)
-        ans = True
-    except Exception as e:
-        write_error(e)
-    finally:
-        time.sleep(5)
-    return ans
-
-def post_bsky_text(text, session):
-    '''BlueSkyに投稿（テキスト指定）'''
-    url = 'https://bsky.social/xrpc/com.atproto.repo.createRecord'
-
-    data = {
-        'repo': session['did'],
-        'collection': 'app.bsky.feed.post',
-        'record': {
-            'text': text,
-            'createdAt': datetime.utcnow().isoformat() + 'Z',
-            'type': 'app.bsky.feed.post',
-        }
-    }
-    headers = {
-        'Authorization': 'Bearer ' + session['accessJwt'],
-        'content-type': 'application/json'
-    }
-
-    response = requests.post(url, data=json.dumps(data), headers=headers)
 
 def try_parse_date(date_string):
     '''複数の書式で日付文字列のパースを試みる'''
@@ -304,30 +137,18 @@ def check_new_feeds(timestamp, feed, session):
                     print(entry.title)
                     print(entry.link)
                 else:
-                    if not post_bsky(entry, feed.feed.title, session):
+                    if THUMB_ENABLED:
+                        card = get_thumb(entry.link)
+                    else:
+                        card = None
+                    if not bsky_util.post_feed(entry, feed.feed.title, session, card):
                         # 投稿に失敗したらループを抜けておく
-                        write_warn('post to bsky failed.')
+                        logger.write_warn('post to bsky failed.')
                         break
     timestamp['updated'] = feed.updated
     cur.close()
     conn.commit()
     return timestamp
-
-def write_warn(message):
-    '''想定している異常だけど多発した際の記録用に発生時間は残しておきたい'''
-    warn_file = pathlib.Path('./warn.log')
-    warn_file.touch()
-
-    with open("warn.log", mode='a') as warn_txt:
-        warn_txt.write(now + " : " + message + "\n")
-
-def write_error(message):
-    '''想定外のエラー'''
-    error_file = pathlib.Path('./error.log')
-    error_file.touch()
-
-    with open("error.log", mode='a') as error_txt:
-        error_txt.write(now + " : " + message + "\n")
 
 def main(session):
     # 最終読み取り時間を元に更新チェック
@@ -349,7 +170,7 @@ def main(session):
                 new_data.append(timestamp)
             except:
                 # パースに失敗したら次のフィードへ
-                write_warn('feedparser parse failed. : ' + check_feeds['url'])
+                logger.write_warn('feedparser parse failed. : ' + check_feeds['url'])
                 pass
 
     # 最終読み取り時間を更新
@@ -369,7 +190,7 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
-            session = load_bsky_session()
+            session = bsky_util.load_session()
             if session:
                 create_db_connection()
                 load_config()
@@ -377,13 +198,13 @@ if __name__ == "__main__":
                 if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
                     delete_old_data()
             else:
-                write_warn('failed to create session.')
+                logger.write_warn('failed to create session.')
         except:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
             stop_file.touch()
             with open(stop_file.name, 'a') as f:
                 traceback.print_exc(file=f)
-            post_bsky_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。', session)
+            bsky_util.post_text('処理中にエラーが発生しました。対応が完了するまで投稿を停止します。', session)
         finally:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             try:

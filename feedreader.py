@@ -12,12 +12,13 @@ import sys
 import pathlib
 import traceback
 import logger
-import bsky_util
+import time
+from bsky_util import BlueskyUtil
 
 load_dotenv('.env')
 
 # サムネ有効設定
-THUMB_ENABLED = os.getenv('THUMB_ENABLED', False)
+THUMB_ENABLED = os.getenv('THUMB_ENABLED', True)
 
 # デバッグモード
 DEBUG_MODE = os.getenv('DEBUG_MODE', True)
@@ -26,6 +27,8 @@ DEBUG_MODE = os.getenv('DEBUG_MODE', True)
 DB_FILE = 'post_log.sqlite'
 
 new_data = []
+
+bsky_util = BlueskyUtil()
 
 # フィード解析用宣言
 DATE_FORMAT = "%a, %d %b %Y %H:%M:%S %Z"
@@ -72,37 +75,31 @@ def load_config():
         global config
         config = json.load(config_file)
 
-def get_thumb(url) -> dict:
+def get_thumb(url) -> bytes:
     '''サムネ取得'''
     resp = requests.get(url)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    title_tag = soup.find("meta", property="og:title")
-    description_tag = soup.find("meta", property="og:description")
+    # title_tag = soup.find("meta", property="og:title")
+    # description_tag = soup.find("meta", property="og:description")
     image_tag = soup.find("meta", property="og:image")
 
-    if image_tag:
-        img_url = image_tag["content"]
-        if img_url == '':
-            # og:imageが空欄の場合がある
-            return
+    if image_tag and image_tag['content'] != '':
         try:
+            img_url = image_tag["content"]
             if "://" not in img_url:
                 img_url = url + img_url
+            
             resp = requests.get(img_url)
             resp.raise_for_status()
-
-            return bsky_util.create_link_card(
-                resp.content,
-                url,
-                title_tag["content"],
-                description_tag["content"],
-                session
-            )
-        except:
-            # サムネ取得や設定に失敗した場合はサムネ無し扱い
+            return resp.content
+        except Exception as e:
+            print(e)
             return
+    else:
+        # 画像が取得できない場合はサムネなし扱い
+        return
 
 def try_parse_date(date_string):
     '''複数の書式で日付文字列のパースを試みる'''
@@ -134,17 +131,22 @@ def check_new_feeds(timestamp, feed, session):
                 cur.execute('INSERT INTO post_log(link, created_at) values(:link, :now)', {'link': entry.link, 'now': now})
                 # 出力
                 if (DEBUG_MODE):
+                    # デバッグモードの時は投稿せずprint
                     print(entry.title)
                     print(entry.link)
                 else:
                     if THUMB_ENABLED:
-                        card = get_thumb(entry.link)
+                        img = get_thumb(entry.link)
                     else:
-                        card = None
-                    if not bsky_util.post_feed(entry, feed.feed.title, session, card):
+                        img = None
+                    # if not bsky_util.post_feed(entry, feed.feed.title, session, card):
+                    if not bsky_util.post_external(feed.feed.title, entry, img):
                         # 投稿に失敗したらループを抜けておく
                         logger.write_warn('post to bsky failed.')
                         break
+                    else:
+                        # レート制限回避のため5秒スリープしてから次へ
+                        time.sleep(5)
     timestamp['updated'] = feed.updated
     cur.close()
     conn.commit()
@@ -168,10 +170,10 @@ def main(session):
                 # bozo=1だったらパースに失敗（URLが死んでるなど？）
                 timestamp = check_new_feeds(timestamp, feed, session)
                 new_data.append(timestamp)
-            except:
+            except Exception as e:
+                logger.write_error(e)
                 # パースに失敗したら次のフィードへ
                 logger.write_warn('feedparser parse failed. : ' + check_feeds['url'])
-                pass
 
     # 最終読み取り時間を更新
     with open("last.json", "w") as last_data:

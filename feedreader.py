@@ -95,7 +95,7 @@ def get_thumb(url) -> bytes:
             resp.raise_for_status()
             return resp.content
         except Exception as e:
-            print(e)
+            logger.write_error(e)
             return
     else:
         # 画像が取得できない場合はサムネなし扱い
@@ -201,8 +201,9 @@ if __name__ == "__main__":
                     delete_old_data()
             else:
                 logger.write_warn('failed to create session.')
-        except:
+        except Exception as e:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
+            logger.write_error(e)
             stop_file.touch()
             with open(stop_file.name, 'a') as f:
                 traceback.print_exc(file=f)

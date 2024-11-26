@@ -1,5 +1,5 @@
 import os
-from atproto import Client, models
+from atproto import Client, models, exceptions
 
 # セッション保持ファイル
 BSKY_SESSION_FILE = 'bsky_session.json'
@@ -17,22 +17,21 @@ class BlueskyUtil():
     def load_session(self):
         '''セッション情報のロード'''
         try:
+            print('try relogin.')
             with open(BSKY_SESSION_FILE, 'r') as file:
                 session_str = file.read()
             return self.client.login(session_string=session_str)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, ValueError, exceptions.BadRequestError):
             # ファイルが存在しなかったりトークンが取得できない場合はセッション作成
-            print('create session')
+            print('failed. create session...')
             return self.create_session()
 
     def create_session(self):
         '''セッションの作成'''
-        self.client.login(os.getenv('BSKY_USER_NAME'), os.getenv('BSKY_APP_PASS'))
+        self.client = Client()
+        login = self.client.login(login=os.getenv('BSKY_USER_NAME'), password=os.getenv('BSKY_APP_PASS'))
         self.save_session()
-
-    def post_feed(self, entry, feed_name, session, card={}):
-        '''BlueSkyに投稿'''
-        self.client.send_post()
+        return login
 
     def post_external(self, message:str, card:dict, img:bytes):
         '''カード付きポスト'''

@@ -11,11 +11,18 @@ import sqlite3
 import sys
 import pathlib
 import traceback
-import logger
+import logging
 import time
 from bsky_util import BlueskyUtil
 
 load_dotenv('.env')
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(name)s %(levelname)s:%(message)s",
+    filename='./debug.log'
+)
+logger = logging.getLogger(__name__)
 
 # サムネ有効設定
 THUMB_ENABLED = os.getenv('THUMB_ENABLED', True)
@@ -95,7 +102,7 @@ def get_thumb(url) -> bytes:
             resp.raise_for_status()
             return resp.content
         except Exception as e:
-            logger.write_error(e)
+            logger.error(e)
             return
     else:
         # 画像が取得できない場合はサムネなし扱い
@@ -142,7 +149,7 @@ def check_new_feeds(timestamp, feed, session):
                     # if not bsky_util.post_feed(entry, feed.feed.title, session, card):
                     if not bsky_util.post_external(feed.feed.title, entry, img):
                         # 投稿に失敗したらループを抜けておく
-                        logger.write_warn('post to bsky failed.')
+                        logger.warning('post to bsky failed.')
                         break
                     else:
                         # レート制限回避のため5秒スリープしてから次へ
@@ -171,9 +178,9 @@ def main(session):
                 timestamp = check_new_feeds(timestamp, feed, session)
                 new_data.append(timestamp)
             except Exception as e:
-                logger.write_error(e)
+                logger.error(e)
                 # パースに失敗したら次のフィードへ
-                logger.write_warn('feedparser parse failed. : ' + check_feeds['url'])
+                logger.warning('feedparser parse failed. : ' + check_feeds['url'])
 
     # 最終読み取り時間を更新
     with open("last.json", "w") as last_data:
@@ -200,10 +207,10 @@ if __name__ == "__main__":
                 if len(sys.argv) > 1 and sys.argv[1] == 'vacuum':
                     delete_old_data()
             else:
-                logger.write_warn('failed to create session.')
+                logger.warning('failed to create session.')
         except Exception as e:
             # 想定していない例外が発生した場合、エラーが発生した遺言を残して停止
-            logger.write_error(e)
+            logger.error(e)
             stop_file.touch()
             with open(stop_file.name, 'a') as f:
                 traceback.print_exc(file=f)

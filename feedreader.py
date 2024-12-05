@@ -13,12 +13,13 @@ import pathlib
 import traceback
 import logging
 import time
+import timeout_decorator
 from bsky_util import BlueskyUtil
 
 load_dotenv(".env")
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging._nameToLevel[os.getenv("LOG_LEVEL", "FATAL")],
     format="%(asctime)s %(name)s %(levelname)s:%(message)s",
     filename="./debug.log",
 )
@@ -127,9 +128,10 @@ def try_parse_date(date_string):
             ans = datetime.strptime(date_string, format)
             return ans
         except:
-            continue
+            # 失敗したら次のフォーマットで試してみる
+            pass
     # 想定外の書式だった場合、エラーを出しつつ暫定的に現在時刻を返す
-    print("failed to parse : " + date_string)
+    logger.warning("failed to parse : " + date_string)
     return now
 
 
@@ -185,6 +187,7 @@ def check_new_feeds(timestamp, feed, session):
     return timestamp
 
 
+@timeout_decorator.timeout(300)
 def main(session):
     # 最終読み取り時間を元に更新チェック
     with open("last.json", "r") as last_data:

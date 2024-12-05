@@ -1,0 +1,4 @@
+feedperser
+beautifulsoup4
+atproto
+timeout_decorator

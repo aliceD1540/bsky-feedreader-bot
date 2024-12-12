@@ -34,12 +34,15 @@ class BlueskyUtil:
 
     def create_session(self):
         """セッションの作成"""
-        self.client = Client()
-        login = self.client.login(
-            login=os.getenv("BSKY_USER_NAME"), password=os.getenv("BSKY_APP_PASS")
-        )
-        self.save_session()
-        return login
+        try:
+            self.client = Client()
+            login = self.client.login(
+                login=os.getenv("BSKY_USER_NAME"), password=os.getenv("BSKY_APP_PASS")
+            )
+            self.save_session()
+            return login
+        except exceptions.InvokeTimeoutError:
+            return None
 
     def post_external(self, message: str, card: dict, img: bytes):
         """カード付きポスト"""

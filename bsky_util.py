@@ -27,6 +27,7 @@ class BlueskyUtil:
             ValueError,
             exceptions.BadRequestError,
             exceptions.NetworkError,
+            exceptions.RequestException,
         ):
             # ファイルが存在しなかったりトークンが取得できない場合はセッション作成
             print("failed. create session...")

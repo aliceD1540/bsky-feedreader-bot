@@ -13,7 +13,7 @@ import pathlib
 import traceback
 import logging
 import time
-from bsky_util import BlueskyUtil
+from utils.bsky_util import BlueskyUtil
 
 load_dotenv(".env")
 

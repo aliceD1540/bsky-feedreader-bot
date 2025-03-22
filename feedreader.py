@@ -14,7 +14,7 @@ import traceback
 import logging
 import time
 import timeout_decorator
-from bsky_util import BlueskyUtil
+from utils.bsky_util import BlueskyUtil
 
 load_dotenv(".env")
 
@@ -89,9 +89,17 @@ def delete_old_data():
 
 def load_config():
     """config.json読み込み"""
-    with open("config.json", "r") as config_file:
-        global config
-        config = json.load(config_file)
+    global config
+    # envのTARGET_FEEDSを確認
+    if os.getenv("TARGET_FEEDS", "") != "":
+        # envに設定されたURLから読み込み
+        config = requests.get(os.getenv("TARGET_FEEDS")).json()
+        logger.debug("Config loaded from remote source.")
+    else:
+        # 空欄ならローカルの config.json から読み込み
+        with open("config.json", "r") as config_file:
+            config = json.load(config_file)
+        logger.debug("Config loaded from local source.")
 
 
 def get_thumb(url) -> bytes:

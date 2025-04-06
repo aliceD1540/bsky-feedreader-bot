@@ -2,3 +2,5 @@
 config.json
 post_log.sqlite
 .lock
+lib
+__pycache__

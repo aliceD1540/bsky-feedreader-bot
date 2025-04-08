@@ -4,3 +4,7 @@ post_log.sqlite
 .lock
 lib
 __pycache__
+*.log
+*.sqlite
+bsky_session.json
+run_counter.txt

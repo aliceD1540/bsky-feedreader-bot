@@ -14,6 +14,7 @@ import traceback
 import logging
 import time
 import timeout_decorator
+import argparse
 from utils.bsky_util import BlueskyUtil
 
 load_dotenv(".env")
@@ -50,7 +51,7 @@ nowDt = datetime.now(JST)
 now = nowDt.strftime(DATE_FORMAT)
 nowUtc = nowDt.isoformat() + "Z"
 
-AS_OLD_DATE = os.getenv("AS_OLD_DATE", 30)
+AS_OLD_DATE = int(os.getenv("AS_OLD_DATE", 30))
 
 
 def create_db_connection():
@@ -77,11 +78,11 @@ def create_table():
 
 def delete_old_data():
     """古いレコードを削除してvacuumを叩く"""
+    print("delete old data")
     cur = conn.cursor()
     cur.execute(
-        "DELETE FROM post_log WHERE created_at < datetime('now', '-"
-        + AS_OLD_DATE
-        + " days')"
+        "DELETE FROM post_log WHERE created_at < datetime('now', ? || ' days')",
+        (f"-{AS_OLD_DATE}",),
     )
     conn.commit()
     cur.execute("VACUUM")
@@ -167,9 +168,12 @@ def check_new_feeds(timestamp, feed, session):
                 {"link": entry.link},
             )
             if posted.fetchone()[0] == 0:
+                # ISO 8601形式に変換して格納
+                entry_date = try_parse_date(entry.updated)
+                iso_created_at = entry_date.strftime("%Y-%m-%d %H:%M:%S")
                 cur.execute(
-                    "INSERT INTO post_log(link, created_at) values(:link, :now)",
-                    {"link": entry.link, "now": now},
+                    "INSERT INTO post_log(link, created_at) values(:link, :created_at)",
+                    {"link": entry.link, "created_at": iso_created_at},
                 )
                 # 出力
                 if DEBUG_MODE:
@@ -234,12 +238,18 @@ if __name__ == "__main__":
             # 前回のプロセスが残っているため何もせず終了
             exit(0)
         try:
+            param_parser = argparse.ArgumentParser()
+            param_parser.add_argument(
+                "--vacuum",
+                action="store_true",
+                help="Perform vacuum operation to clean old data",
+            )
             session = bsky_util.load_session()
             if session:
                 create_db_connection()
                 load_config()
                 main(session)
-                if len(sys.argv) > 1 and sys.argv[1] == "vacuum":
+                if param_parser.parse_args().vacuum:
                     delete_old_data()
             else:
                 logger.warning("failed to create session.")

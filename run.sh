@@ -13,7 +13,7 @@ fi
 COUNTER=$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)
 
 # プログラムの実行
-if (( COUNTER % 2 == 9000 )); then
+if (( COUNTER > 9000 )); then
     # vacuumオプション（旧データ削除）付きのコマンド
     python3 feedreader.py --vacuum
     # カウンタをリセット

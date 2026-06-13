@@ -1,3 +1,7 @@
+# ⚠️ Deprecated / Archived Repository
+
+[CloudFlare版](https://github.com/aliceD1540/bsky-feedreader-cloudflare) に移行しました。
+
 ## なにこれ
 
 Bluesky用フィードリーダーです。  
